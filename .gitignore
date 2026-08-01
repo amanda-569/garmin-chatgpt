@@ -1,0 +1,15 @@
+# Python virtual environment
+.venv/
+
+# Local configuration and secrets
+.env
+.secrets/
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+
+# macOS-generated files
+.DS_Store
+
+.vscode/
