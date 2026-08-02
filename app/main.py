@@ -10,6 +10,12 @@ app = FastAPI(
         "and returns deterministic workout analysis."
     ),
     version="0.1.0",
+    servers=[
+        {
+            "url": "https://garmin-chatgpt.vercel.app",
+            "description": "Production",
+        }
+    ],
 )
 app.include_router(runs.router)
 
