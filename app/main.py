@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from app.routers import runs
 from app.config import settings
 from copy import deepcopy
@@ -84,3 +84,22 @@ def get_action_openapi_schema() -> dict[str, Any]:
             }
 
     return schema
+
+
+@app.middleware("http")
+async def prevent_private_data_caching(
+    request: Request,
+    call_next,
+):
+    response = await call_next(request)
+
+    protected_prefixes = (
+        "/runs",
+        "/recovery",
+        "/cycle",
+    )
+
+    if request.url.path.startswith(protected_prefixes):
+        response.headers["Cache-Control"] = "private, no-store"
+
+    return response
