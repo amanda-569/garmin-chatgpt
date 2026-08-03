@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, Field
 
 
@@ -135,5 +135,64 @@ class RunAnalysis(BaseModel):
     zone_4_5_percent: float
 
     intervals: list[IntervalExecution] = Field(default_factory=list)
+
+    warnings: list[str] = Field(default_factory=list)
+
+
+class RecoveryDay(BaseModel):
+    date: date
+
+    sleep_duration_seconds: int | None = None
+    sleep_score: int | None = None
+
+    deep_sleep_seconds: int | None = None
+    light_sleep_seconds: int | None = None
+    rem_sleep_seconds: int | None = None
+    awake_seconds: int | None = None
+    nap_seconds: int | None = None
+
+    average_sleep_stress: float | None = None
+
+    body_battery_change: int | None = None
+    body_battery_charged: int | None = None
+    body_battery_drained: int | None = None
+
+    overnight_hrv_ms: float | None = None
+    weekly_hrv_ms: float | None = None
+    hrv_status: str | None = None
+    hrv_baseline_low_ms: float | None = None
+    hrv_baseline_high_ms: float | None = None
+
+    resting_heart_rate_bpm: float | None = None
+
+    training_readiness_score: int | None = None
+    training_readiness_level: str | None = None
+
+    average_stress_level: int | None = None
+
+    missing_fields: list[str] = Field(default_factory=list)
+
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CycleDay(BaseModel):
+    date: date
+
+    cycle_day: int | None = None
+    cycle_type: str | None = None
+
+    phase_code: int | None = None
+    days_until_next_phase: int | None = None
+    phase_length_days: int | None = None
+
+    period_length_days: int | None = None
+    cycle_start_date: date | None = None
+
+    cycle_is_predicted: bool | None = None
+    predicted_cycle_length_days: int | None = None
+
+    has_logged_day_data: bool = False
+
+    missing_fields: list[str] = Field(default_factory=list)
 
     warnings: list[str] = Field(default_factory=list)

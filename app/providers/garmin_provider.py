@@ -15,6 +15,13 @@ from pathlib import Path
 from app.storage.vercel_blob import (
     VercelBlobTokenStore,
 )
+from typing import Any
+
+from app.mappers.garmin_health import (
+    map_garmin_cycle_day,
+    map_garmin_recovery_day,
+)
+from app.models import CycleDay, RecoveryDay
 
 
 class GarminRunProvider(RunProvider):
@@ -171,3 +178,71 @@ class GarminRunProvider(RunProvider):
         self.blob_token_store.upload_from(self.token_file)
 
         self.last_token_digest = current_digest
+
+    def get_recovery_day(
+        self,
+        target_date: date,
+    ) -> RecoveryDay:
+        date_string = target_date.isoformat()
+
+        sleep_payload = self.client.get_sleep_data(date_string)
+
+        hrv_payload = self.client.get_hrv_data(date_string)
+
+        resting_heart_rate_payload = self.client.get_rhr_day(date_string)
+
+        training_readiness_payload = self.client.get_morning_training_readiness(
+            date_string
+        )
+
+        # Garmin may occasionally omit the dedicated
+        # morning record while returning the day's list.
+        if training_readiness_payload is None:
+            readiness_records = self.client.get_training_readiness(date_string)
+
+            training_readiness_payload = next(
+                (
+                    record
+                    for record in readiness_records
+                    if record.get("primaryActivityTracker")
+                ),
+                readiness_records[0] if readiness_records else None,
+            )
+
+        body_battery_payload = self.client.get_body_battery(
+            date_string,
+            date_string,
+        )
+
+        stress_payload = self.client.get_all_day_stress(date_string)
+
+        recovery = map_garmin_recovery_day(
+            target_date=target_date,
+            sleep_payload=sleep_payload,
+            hrv_payload=hrv_payload,
+            resting_heart_rate_payload=(resting_heart_rate_payload),
+            training_readiness_payload=(training_readiness_payload),
+            body_battery_payload=(body_battery_payload),
+            stress_payload=stress_payload,
+        )
+
+        self._persist_and_sync_tokens()
+
+        return recovery
+
+    def get_cycle_day(
+        self,
+        target_date: date,
+    ) -> CycleDay:
+        date_string = target_date.isoformat()
+
+        menstrual_payload = self.client.get_menstrual_data_for_date(date_string)
+
+        cycle_day = map_garmin_cycle_day(
+            target_date=target_date,
+            menstrual_payload=menstrual_payload,
+        )
+
+        self._persist_and_sync_tokens()
+
+        return cycle_day

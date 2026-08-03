@@ -3,6 +3,9 @@ from app.routers import runs
 from app.config import settings
 from copy import deepcopy
 from typing import Any
+from app.routers.health import (
+    router as health_router,
+)
 
 app = FastAPI(
     title="Garmin Running Coach API",
@@ -12,14 +15,9 @@ app = FastAPI(
         "and returns deterministic workout analysis."
     ),
     version="0.1.0",
-    servers=[
-        {
-            "url": "https://garmin-chatgpt.vercel.app",
-            "description": "Production",
-        }
-    ],
 )
 app.include_router(runs.router)
+app.include_router(health_router)
 
 
 @app.get(
@@ -36,6 +34,13 @@ def health_check() -> dict[str, str]:
 )
 def get_action_openapi_schema() -> dict[str, Any]:
     schema = deepcopy(app.openapi())
+
+    schema["servers"] = [
+        {
+            "url": "https://garmin-chatgpt.vercel.app",
+            "description": "Production",
+        }
+    ]
 
     component_schemas = schema.get("components", {}).get("schemas", {})
 

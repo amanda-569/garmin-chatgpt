@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     garmin_token_blob_path: str = "garmin_tokens.json"
 
+    user_timezone: str = "America/Vancouver"
+
     blob_store_id: str | None = None
     blob_read_write_token: SecretStr | None = None
 
