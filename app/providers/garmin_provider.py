@@ -22,6 +22,9 @@ from app.mappers.garmin_health import (
     map_garmin_recovery_day,
 )
 from app.models import CycleDay, RecoveryDay
+from garminconnect.exceptions import (
+    GarminConnectConnectionError,
+)
 
 
 class GarminRunProvider(RunProvider):
@@ -83,11 +86,16 @@ class GarminRunProvider(RunProvider):
         raw_hr_zones = self.client.get_activity_hr_in_timezones(activity_id_string)
 
         workout_id = self.get_workout_id(raw_activity)
+        raw_workout = None
 
-        if workout_id is None:
-            raw_workout = None
-        else:
-            raw_workout = self.client.get_workout_by_id(workout_id)
+        if workout_id is not None:
+            try:
+                raw_workout = self.client.get_workout_by_id(workout_id)
+            except GarminConnectConnectionError as exc:
+                # Garmin may retain a workout ID on the activity
+                # even when that workout is no longer retrievable.
+                if "404" not in str(exc):
+                    raise
 
         run = map_garmin_activity_to_run_details(
             raw_activity=raw_activity,
