@@ -6,6 +6,7 @@ from typing import Any
 from app.routers.health import (
     router as health_router,
 )
+from app.routers.workouts import router as workouts_router
 
 app = FastAPI(
     title="Garmin Running Coach API",
@@ -18,6 +19,7 @@ app = FastAPI(
 )
 app.include_router(runs.router)
 app.include_router(health_router)
+app.include_router(workouts_router)
 
 
 @app.get(
@@ -97,6 +99,7 @@ async def prevent_private_data_caching(
         "/runs",
         "/recovery",
         "/cycle",
+        "/workouts",
     )
 
     if request.url.path.startswith(protected_prefixes):

@@ -18,6 +18,9 @@ class Settings(BaseSettings):
         "local",
         "vercel_blob",
     ] = "local"
+    workout_draft_directory: Path = Path(".secrets/workout_drafts")
+
+    workout_draft_blob_prefix: str = "workout-drafts"
 
     garmin_token_blob_path: str = "garmin_tokens.json"
 

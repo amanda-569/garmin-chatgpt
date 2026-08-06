@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from garminconnect import Garmin
+from garminconnect.workout import RunningWorkout
 
 from app.config import settings
 from app.mappers.garmin import (
@@ -254,3 +255,27 @@ class GarminRunProvider(RunProvider):
         self._persist_and_sync_tokens()
 
         return cycle_day
+
+    def upload_running_workout(
+        self,
+        workout: RunningWorkout,
+    ) -> dict[str, Any]:
+        response = self.client.upload_running_workout(workout)
+
+        self._persist_and_sync_tokens()
+
+        return response
+
+    def schedule_workout(
+        self,
+        workout_id: int,
+        scheduled_date: date,
+    ) -> dict[str, Any]:
+        response = self.client.schedule_workout(
+            workout_id,
+            scheduled_date.isoformat(),
+        )
+
+        self._persist_and_sync_tokens()
+
+        return response
