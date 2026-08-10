@@ -51,9 +51,7 @@ def _format_duration(seconds: int) -> str:
     return f"{minutes} min " f"{remaining_seconds} sec"
 
 
-def _describe_timed_step(
-    step: TimedWorkoutStep,
-) -> str:
+def _describe_timed_step(step: TimedWorkoutStep) -> str:
     labels = {
         "warmup": "Warm up",
         "interval": "Run interval",
@@ -61,7 +59,16 @@ def _describe_timed_step(
         "cooldown": "Cool down",
     }
 
-    return f"{labels[step.kind]} for " f"{_format_duration(step.duration_seconds)}"
+    description = (
+        f"{labels[step.kind]} for " f"{_format_duration(step.duration_seconds)}"
+    )
+
+    if step.heart_rate_min_bpm is not None and step.heart_rate_max_bpm is not None:
+        description += (
+            f" at {step.heart_rate_min_bpm}" f"-{step.heart_rate_max_bpm} bpm"
+        )
+
+    return description
 
 
 def _describe_repeat_block(

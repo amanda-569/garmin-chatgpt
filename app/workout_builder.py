@@ -23,6 +23,33 @@ RUNNING_SPORT = {
     "sportTypeKey": "running",
 }
 
+HEART_RATE_TARGET = {
+    "workoutTargetTypeId": 4,
+    "workoutTargetTypeKey": "heart.rate.zone",
+    "displayOrder": 4,
+}
+
+
+def _apply_heart_rate_target(
+    garmin_step: ExecutableStep,
+    step: TimedWorkoutStep,
+) -> ExecutableStep:
+    """
+    Add Garmin's explicit BPM target fields when the
+    draft step contains a heart-rate range.
+    """
+    if step.heart_rate_min_bpm is None or step.heart_rate_max_bpm is None:
+        return garmin_step
+
+    data = garmin_step.model_dump()
+
+    data["targetType"] = HEART_RATE_TARGET
+    data["targetValueOne"] = float(step.heart_rate_min_bpm)
+    data["targetValueTwo"] = float(step.heart_rate_max_bpm)
+    data["zoneNumber"] = None
+
+    return ExecutableStep(**data)
+
 
 def _build_timed_step(
     step: TimedWorkoutStep,
@@ -32,30 +59,36 @@ def _build_timed_step(
     Convert one safe internal step into Garmin's format.
     """
     if step.kind == "warmup":
-        return create_warmup_step(
+        garmin_step = create_warmup_step(
             duration_seconds=step.duration_seconds,
             step_order=step_order,
         )
 
-    if step.kind == "interval":
-        return create_interval_step(
+    elif step.kind == "interval":
+        garmin_step = create_interval_step(
             duration_seconds=step.duration_seconds,
             step_order=step_order,
         )
 
-    if step.kind == "recovery":
-        return create_recovery_step(
+    elif step.kind == "recovery":
+        garmin_step = create_recovery_step(
             duration_seconds=step.duration_seconds,
             step_order=step_order,
         )
 
-    if step.kind == "cooldown":
-        return create_cooldown_step(
+    elif step.kind == "cooldown":
+        garmin_step = create_cooldown_step(
             duration_seconds=step.duration_seconds,
             step_order=step_order,
         )
 
-    raise ValueError(f"Unsupported workout step: {step.kind}")
+    else:
+        raise ValueError(f"Unsupported workout step: " f"{step.kind}")
+
+    return _apply_heart_rate_target(
+        garmin_step,
+        step,
+    )
 
 
 def _build_repeat_block(

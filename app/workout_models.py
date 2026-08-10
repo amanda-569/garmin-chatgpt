@@ -11,13 +11,6 @@ from uuid import UUID
 
 
 class TimedWorkoutStep(BaseModel):
-    """
-    One normal timed step.
-
-    ChatGPT cannot send Garmin's internal IDs or arbitrary JSON.
-    It can only choose one of these four step types.
-    """
-
     kind: Literal[
         "warmup",
         "interval",
@@ -29,6 +22,44 @@ class TimedWorkoutStep(BaseModel):
         ge=30,
         le=7200,
     )
+
+    heart_rate_min_bpm: int | None = Field(
+        default=None,
+        ge=40,
+        le=230,
+    )
+
+    heart_rate_max_bpm: int | None = Field(
+        default=None,
+        ge=40,
+        le=230,
+    )
+
+    @field_validator("heart_rate_max_bpm")
+    @classmethod
+    def validate_hr_range_order(
+        cls,
+        heart_rate_max_bpm: int | None,
+        info,
+    ) -> int | None:
+        heart_rate_min_bpm = info.data.get("heart_rate_min_bpm")
+
+        if heart_rate_min_bpm is None and heart_rate_max_bpm is None:
+            return heart_rate_max_bpm
+
+        if heart_rate_min_bpm is None or heart_rate_max_bpm is None:
+            raise ValueError(
+                "heart_rate_min_bpm and "
+                "heart_rate_max_bpm must either "
+                "both be provided or both be omitted."
+            )
+
+        if heart_rate_min_bpm >= heart_rate_max_bpm:
+            raise ValueError(
+                "heart_rate_min_bpm must be " "less than heart_rate_max_bpm."
+            )
+
+        return heart_rate_max_bpm
 
 
 class RepeatWorkoutBlock(BaseModel):
