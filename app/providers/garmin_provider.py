@@ -22,10 +22,11 @@ from app.mappers.garmin_health import (
     map_garmin_cycle_day,
     map_garmin_recovery_day,
 )
-from app.models import CycleDay, RecoveryDay
+from app.models import CycleDay, RecoveryDay, ActivitySummary
 from garminconnect.exceptions import (
     GarminConnectConnectionError,
 )
+from app.mappers.activity import map_garmin_activity_to_summary
 
 
 class GarminRunProvider(RunProvider):
@@ -279,3 +280,24 @@ class GarminRunProvider(RunProvider):
         self._persist_and_sync_tokens()
 
         return response
+
+    def list_activities(
+        self,
+        start_date: date,
+        end_date: date,
+        activity_type: str | None = None,
+    ) -> list[ActivitySummary]:
+        raw_activities = self.client.get_activities_by_date(
+            startdate=start_date.isoformat(),
+            enddate=end_date.isoformat(),
+            activitytype=activity_type,
+        )
+
+        activities = [
+            map_garmin_activity_to_summary(raw_activity)
+            for raw_activity in raw_activities
+        ]
+
+        self._persist_and_sync_tokens()
+
+        return activities

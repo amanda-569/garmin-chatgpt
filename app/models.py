@@ -196,3 +196,18 @@ class CycleDay(BaseModel):
     missing_fields: list[str] = Field(default_factory=list)
 
     warnings: list[str] = Field(default_factory=list)
+
+
+class ActivitySummary(BaseModel):
+    activity_id: int
+    activity_type: str
+    name: str
+    started_at: datetime
+
+    distance_meters: float | None = None
+    duration_seconds: float | None = None
+
+    average_heart_rate: float | None = None
+    maximum_heart_rate: float | None = None
+
+    elevation_gain_meters: float | None = None
