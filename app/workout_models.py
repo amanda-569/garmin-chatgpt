@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from pydantic import (
-    BaseModel,
-    Field,
-    field_validator,
-)
 from datetime import date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
 
-class TimedWorkoutStep(BaseModel):
+
+class WorkoutStep(BaseModel):
     kind: Literal[
         "warmup",
         "interval",
@@ -18,10 +20,29 @@ class TimedWorkoutStep(BaseModel):
         "cooldown",
     ]
 
-    duration_seconds: int = Field(
-        ge=30,
+    end_type: Literal[
+        "time",
+        "distance",
+        "lap_button",
+    ] = "time"
+
+    duration_seconds: int | None = Field(
+        default=None,
+        ge=1,
         le=7200,
     )
+
+    distance_meters: float | None = Field(
+        default=None,
+        ge=1,
+        le=100000,
+    )
+
+    target_type: Literal[
+        "open",
+        "heart_rate",
+        "pace",
+    ] = "open"
 
     heart_rate_min_bpm: int | None = Field(
         default=None,
@@ -35,42 +56,136 @@ class TimedWorkoutStep(BaseModel):
         le=230,
     )
 
-    @field_validator("heart_rate_max_bpm")
-    @classmethod
-    def validate_hr_range_order(
-        cls,
-        heart_rate_max_bpm: int | None,
-        info,
-    ) -> int | None:
-        heart_rate_min_bpm = info.data.get("heart_rate_min_bpm")
+    target_pace_fast_seconds_per_km: float | None = Field(
+        default=None,
+        ge=120,
+        le=1800,
+    )
 
-        if heart_rate_min_bpm is None and heart_rate_max_bpm is None:
-            return heart_rate_max_bpm
+    target_pace_slow_seconds_per_km: float | None = Field(
+        default=None,
+        ge=120,
+        le=1800,
+    )
 
-        if heart_rate_min_bpm is None or heart_rate_max_bpm is None:
+    @model_validator(mode="after")
+    def validate_step(
+        self,
+    ) -> "WorkoutStep":
+        if self.end_type == "time":
+            if self.duration_seconds is None:
+                raise ValueError(
+                    "duration_seconds is required " "for time-based steps."
+                )
+
+            if self.distance_meters is not None:
+                raise ValueError(
+                    "distance_meters must be omitted " "for time-based steps."
+                )
+
+        elif self.end_type == "distance":
+            if self.distance_meters is None:
+                raise ValueError(
+                    "distance_meters is required " "for distance-based steps."
+                )
+
+            if self.duration_seconds is not None:
+                raise ValueError(
+                    "duration_seconds must be omitted " "for distance-based steps."
+                )
+
+        else:
+            if self.duration_seconds is not None or self.distance_meters is not None:
+                raise ValueError(
+                    "lap_button steps cannot include "
+                    "duration_seconds or distance_meters."
+                )
+
+        has_hr_min = self.heart_rate_min_bpm is not None
+
+        has_hr_max = self.heart_rate_max_bpm is not None
+
+        if has_hr_min != has_hr_max:
             raise ValueError(
                 "heart_rate_min_bpm and "
                 "heart_rate_max_bpm must either "
                 "both be provided or both be omitted."
             )
 
-        if heart_rate_min_bpm >= heart_rate_max_bpm:
+        if (
+            self.heart_rate_min_bpm is not None
+            and self.heart_rate_max_bpm is not None
+            and self.heart_rate_min_bpm >= self.heart_rate_max_bpm
+        ):
             raise ValueError(
-                "heart_rate_min_bpm must be " "less than heart_rate_max_bpm."
+                "heart_rate_min_bpm must be less " "than heart_rate_max_bpm."
             )
 
-        return heart_rate_max_bpm
+        has_pace_fast = self.target_pace_fast_seconds_per_km is not None
+
+        has_pace_slow = self.target_pace_slow_seconds_per_km is not None
+
+        if has_pace_fast != has_pace_slow:
+            raise ValueError(
+                "target_pace_fast_seconds_per_km and "
+                "target_pace_slow_seconds_per_km must "
+                "either both be provided or both be omitted."
+            )
+
+        if (
+            self.target_pace_fast_seconds_per_km is not None
+            and self.target_pace_slow_seconds_per_km is not None
+            and self.target_pace_fast_seconds_per_km
+            > self.target_pace_slow_seconds_per_km
+        ):
+            raise ValueError(
+                "target_pace_fast_seconds_per_km must "
+                "be less than or equal to "
+                "target_pace_slow_seconds_per_km."
+            )
+
+        has_hr_target = has_hr_min and has_hr_max
+
+        has_pace_target = has_pace_fast and has_pace_slow
+
+        if has_hr_target and has_pace_target:
+            raise ValueError("A step cannot have both heart-rate " "and pace targets.")
+
+        # Backward compatibility with the writer
+        # format we already deployed.
+        if self.target_type == "open":
+            if has_hr_target:
+                self.target_type = "heart_rate"
+
+            elif has_pace_target:
+                self.target_type = "pace"
+
+        if self.target_type == "heart_rate":
+            if not has_hr_target:
+                raise ValueError(
+                    "heart_rate target_type requires "
+                    "heart_rate_min_bpm and "
+                    "heart_rate_max_bpm."
+                )
+
+            if has_pace_target:
+                raise ValueError(
+                    "heart_rate target_type cannot " "include a pace target."
+                )
+
+        elif self.target_type == "pace":
+            if not has_pace_target:
+                raise ValueError("pace target_type requires both " "pace range fields.")
+
+            if has_hr_target:
+                raise ValueError(
+                    "pace target_type cannot include " "a heart-rate target."
+                )
+
+        return self
 
 
 class RepeatWorkoutBlock(BaseModel):
-    """
-    A repeat block such as:
-
-    Repeat 5 times:
-    - run for 3 minutes
-    - recover for 2 minutes
-    """
-
     kind: Literal["repeat"] = "repeat"
 
     repetitions: int = Field(
@@ -78,7 +193,7 @@ class RepeatWorkoutBlock(BaseModel):
         le=20,
     )
 
-    steps: list[TimedWorkoutStep] = Field(
+    steps: list[WorkoutStep] = Field(
         min_length=1,
         max_length=4,
     )
@@ -87,8 +202,8 @@ class RepeatWorkoutBlock(BaseModel):
     @classmethod
     def validate_repeat_steps(
         cls,
-        steps: list[TimedWorkoutStep],
-    ) -> list[TimedWorkoutStep]:
+        steps: list[WorkoutStep],
+    ) -> list[WorkoutStep]:
         allowed_kinds = {
             "interval",
             "recovery",
@@ -110,16 +225,15 @@ class RepeatWorkoutBlock(BaseModel):
 
 
 WorkoutDraftStep = Annotated[
-    TimedWorkoutStep | RepeatWorkoutBlock,
+    WorkoutStep | RepeatWorkoutBlock,
     Field(discriminator="kind"),
 ]
 
+# Keeps old scripts/imports working.
+TimedWorkoutStep = WorkoutStep
+
 
 class WorkoutDraftRequest(BaseModel):
-    """
-    The restricted workout proposal accepted from ChatGPT.
-    """
-
     name: str = Field(
         min_length=1,
         max_length=80,
@@ -134,15 +248,14 @@ class WorkoutDraftRequest(BaseModel):
 
 
 class WorkoutDraftPreview(BaseModel):
-    """
-    The readable result returned before anything is uploaded.
-    """
-
     draft_id: UUID
 
     draft: WorkoutDraftRequest
 
-    estimated_duration_seconds: int = Field(gt=0)
+    estimated_duration_seconds: int | None = Field(
+        default=None,
+        gt=0,
+    )
 
     summary: list[str]
 
@@ -164,7 +277,10 @@ class StoredWorkoutDraft(BaseModel):
 
     draft: WorkoutDraftRequest
 
-    estimated_duration_seconds: int = Field(gt=0)
+    estimated_duration_seconds: int | None = Field(
+        default=None,
+        gt=0,
+    )
 
     summary: list[str]
 

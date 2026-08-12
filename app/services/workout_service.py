@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-from uuid import uuid4, UUID
+from datetime import (
+    date,
+    datetime,
+    timezone,
+)
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from app.config import settings
-from app.workout_builder import (
-    calculate_workout_duration,
-)
 from app.providers.workout_base import (
     WorkoutWriteProvider,
 )
@@ -24,10 +25,10 @@ from app.workout_builder import (
 from app.workout_models import (
     RepeatWorkoutBlock,
     StoredWorkoutDraft,
-    TimedWorkoutStep,
     WorkoutCommitResult,
     WorkoutDraftPreview,
     WorkoutDraftRequest,
+    WorkoutStep,
 )
 
 draft_store = get_workout_draft_store()
@@ -39,7 +40,9 @@ def _local_today() -> date:
     return datetime.now(timezone).date()
 
 
-def _format_duration(seconds: int) -> str:
+def _format_duration(
+    seconds: int,
+) -> str:
     minutes, remaining_seconds = divmod(
         seconds,
         60,
@@ -51,7 +54,36 @@ def _format_duration(seconds: int) -> str:
     return f"{minutes} min " f"{remaining_seconds} sec"
 
 
-def _describe_timed_step(step: TimedWorkoutStep) -> str:
+def _format_distance(
+    distance_meters: float,
+) -> str:
+    if distance_meters >= 1000:
+        kilometers = distance_meters / 1000
+
+        if kilometers.is_integer():
+            return f"{int(kilometers)} km"
+
+        return f"{kilometers:g} km"
+
+    return f"{distance_meters:g} m"
+
+
+def _format_pace(
+    seconds_per_km: float,
+) -> str:
+    rounded_seconds = round(seconds_per_km)
+
+    minutes, seconds = divmod(
+        rounded_seconds,
+        60,
+    )
+
+    return f"{minutes}:{seconds:02d}/km"
+
+
+def _describe_workout_step(
+    step: WorkoutStep,
+) -> str:
     labels = {
         "warmup": "Warm up",
         "interval": "Run interval",
@@ -59,13 +91,40 @@ def _describe_timed_step(step: TimedWorkoutStep) -> str:
         "cooldown": "Cool down",
     }
 
-    description = (
-        f"{labels[step.kind]} for " f"{_format_duration(step.duration_seconds)}"
-    )
+    description = labels[step.kind]
 
-    if step.heart_rate_min_bpm is not None and step.heart_rate_max_bpm is not None:
+    if step.end_type == "time":
+        assert step.duration_seconds is not None
+
+        description += " for " f"{_format_duration(step.duration_seconds)}"
+
+    elif step.end_type == "distance":
+        assert step.distance_meters is not None
+
+        description += " for " f"{_format_distance(step.distance_meters)}"
+
+    else:
+        description += " until lap press"
+
+    if step.target_type == "heart_rate":
+        assert step.heart_rate_min_bpm is not None
+
+        assert step.heart_rate_max_bpm is not None
+
         description += (
             f" at {step.heart_rate_min_bpm}" f"-{step.heart_rate_max_bpm} bpm"
+        )
+
+    elif step.target_type == "pace":
+        assert step.target_pace_fast_seconds_per_km is not None
+
+        assert step.target_pace_slow_seconds_per_km is not None
+
+        description += (
+            " at "
+            f"{_format_pace(step.target_pace_fast_seconds_per_km)}"
+            "-"
+            f"{_format_pace(step.target_pace_slow_seconds_per_km)}"
         )
 
     return description
@@ -74,7 +133,7 @@ def _describe_timed_step(step: TimedWorkoutStep) -> str:
 def _describe_repeat_block(
     block: RepeatWorkoutBlock,
 ) -> str:
-    child_description = ", ".join(_describe_timed_step(step) for step in block.steps)
+    child_description = ", ".join(_describe_workout_step(step) for step in block.steps)
 
     return f"Repeat {block.repetitions} times: " f"{child_description}"
 
@@ -82,20 +141,15 @@ def _describe_repeat_block(
 def create_workout_preview(
     draft: WorkoutDraftRequest,
 ) -> WorkoutDraftPreview:
-    """
-    Validate and describe a workout proposal.
-
-    This function does not contact Garmin.
-    """
     if draft.scheduled_date < _local_today():
         raise ValueError("The scheduled date cannot be " "in the past.")
 
     duration_seconds = calculate_workout_duration(draft)
 
-    if duration_seconds < 300:
+    if duration_seconds is not None and duration_seconds < 300:
         raise ValueError("The total workout must be at " "least 5 minutes.")
 
-    if duration_seconds > 14400:
+    if duration_seconds is not None and duration_seconds > 14400:
         raise ValueError("The total workout cannot exceed " "4 hours.")
 
     summary: list[str] = []
@@ -103,21 +157,38 @@ def create_workout_preview(
     for step in draft.steps:
         if isinstance(
             step,
-            TimedWorkoutStep,
+            WorkoutStep,
         ):
-            summary.append(_describe_timed_step(step))
+            summary.append(_describe_workout_step(step))
+
         else:
             summary.append(_describe_repeat_block(step))
 
     warnings: list[str] = []
 
+    if duration_seconds is None:
+        warnings.append(
+            "Total duration cannot be estimated "
+            "exactly because the workout contains "
+            "distance and/or lap-button steps "
+            "without pace targets."
+        )
+
     has_warmup = any(
-        isinstance(step, TimedWorkoutStep) and step.kind == "warmup"
+        isinstance(
+            step,
+            WorkoutStep,
+        )
+        and step.kind == "warmup"
         for step in draft.steps
     )
 
     has_cooldown = any(
-        isinstance(step, TimedWorkoutStep) and step.kind == "cooldown"
+        isinstance(
+            step,
+            WorkoutStep,
+        )
+        and step.kind == "cooldown"
         for step in draft.steps
     )
 
@@ -188,7 +259,11 @@ def _extract_workout_id(
 
         try:
             workout_id = int(value)
-        except (TypeError, ValueError):
+
+        except (
+            TypeError,
+            ValueError,
+        ):
             continue
 
         if workout_id > 0:
@@ -213,7 +288,7 @@ def commit_workout_draft(
         return WorkoutCommitResult(
             draft_id=record.draft_id,
             status="committed",
-            workout_name=record.draft.name,
+            workout_name=(record.draft.name),
             scheduled_date=(record.draft.scheduled_date),
             garmin_workout_id=(record.garmin_workout_id),
             already_committed=True,
@@ -240,6 +315,7 @@ def commit_workout_draft(
     if record.status == "previewed":
         record.status = "uploading"
         record.failure_message = None
+
         draft_store.save(record)
 
         workout = build_running_workout(record.draft)
@@ -248,18 +324,22 @@ def commit_workout_draft(
             upload_response = provider.upload_running_workout(workout)
 
             workout_id = _extract_workout_id(upload_response)
+
         except Exception as exc:
             record.failure_message = (
                 "Upload failed or its result is "
                 "uncertain. Check Garmin before "
                 "retrying."
             )
+
             draft_store.save(record)
 
-            raise WorkoutCommitExternalError(record.failure_message) from exc
+            raise (WorkoutCommitExternalError(record.failure_message)) from exc
 
         record.garmin_workout_id = workout_id
+
         record.status = "uploaded"
+
         draft_store.save(record)
 
     if record.status == "uploaded":
@@ -270,6 +350,7 @@ def commit_workout_draft(
 
         record.status = "scheduling"
         record.failure_message = None
+
         draft_store.save(record)
 
         try:
@@ -277,25 +358,30 @@ def commit_workout_draft(
                 record.garmin_workout_id,
                 record.draft.scheduled_date,
             )
+
         except Exception as exc:
             record.failure_message = (
                 "Scheduling failed or its result "
                 "is uncertain. Check the Garmin "
                 "calendar before retrying."
             )
+
             draft_store.save(record)
 
-            raise WorkoutCommitExternalError(record.failure_message) from exc
+            raise (WorkoutCommitExternalError(record.failure_message)) from exc
 
         record.status = "committed"
+
         record.committed_at = datetime.now(timezone.utc)
+
         record.failure_message = None
+
         draft_store.save(record)
 
     return WorkoutCommitResult(
         draft_id=record.draft_id,
         status="committed",
-        workout_name=record.draft.name,
+        workout_name=(record.draft.name),
         scheduled_date=(record.draft.scheduled_date),
         garmin_workout_id=(record.garmin_workout_id),
     )
