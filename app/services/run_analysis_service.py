@@ -8,38 +8,84 @@ from app.models import (
 )
 
 
-def find_planned_pace_interval(
+def find_interval_candidate(
     steps: list[PlannedWorkoutStep],
+    pace_target_only: bool,
     repeat_count: int | None = None,
 ) -> tuple[PlannedWorkoutStep, int] | None:
+    fallback_result: (
+        tuple[
+            PlannedWorkoutStep,
+            int,
+        ]
+        | None
+    ) = None
+
     for step in steps:
         active_repeat_count = (
             step.repeat_count if step.repeat_count is not None else repeat_count
         )
 
-        is_pace_interval = (
-            step.step_type == "interval"
-            and step.target_type == "pace"
-            and step.execution_index is not None
+        nested_result = find_interval_candidate(
+            step.child_steps,
+            pace_target_only=pace_target_only,
+            repeat_count=active_repeat_count,
+        )
+
+        if nested_result is not None:
+            nested_step, nested_repetitions = nested_result
+
+            if nested_repetitions > 1:
+                return nested_result
+
+            if fallback_result is None:
+                fallback_result = nested_result
+
+        is_interval = step.step_type == "interval" and step.execution_index is not None
+
+        if not is_interval:
+            continue
+
+        has_pace_target = (
+            step.target_type == "pace"
             and step.target_pace_fast_seconds_per_km is not None
             and step.target_pace_slow_seconds_per_km is not None
         )
 
-        if is_pace_interval:
-            return (
-                step,
-                active_repeat_count or 1,
-            )
+        if pace_target_only and not has_pace_target:
+            continue
 
-        nested_result = find_planned_pace_interval(
-            step.child_steps,
-            active_repeat_count,
+        repetitions = active_repeat_count or 1
+
+        result = (
+            step,
+            repetitions,
         )
 
-        if nested_result is not None:
-            return nested_result
+        if repetitions > 1:
+            return result
 
-    return None
+        if fallback_result is None:
+            fallback_result = result
+
+    return fallback_result
+
+
+def find_planned_interval(
+    steps: list[PlannedWorkoutStep],
+) -> tuple[PlannedWorkoutStep, int] | None:
+    pace_interval = find_interval_candidate(
+        steps,
+        pace_target_only=True,
+    )
+
+    if pace_interval is not None:
+        return pace_interval
+
+    return find_interval_candidate(
+        steps,
+        pace_target_only=False,
+    )
 
 
 def calculate_target_deviation(
@@ -64,6 +110,7 @@ def calculate_target_deviation(
 
 def average_optional_values(
     values: list[float | None],
+    digits: int = 1,
 ) -> float | None:
     available_values = [float(value) for value in values if value is not None]
 
@@ -72,7 +119,7 @@ def average_optional_values(
 
     return round(
         mean(available_values),
-        1,
+        digits,
     )
 
 
@@ -86,6 +133,27 @@ def calculate_zone_4_5_percent(
     )
 
     return round(total_percent, 1)
+
+
+def calculate_first_to_last_percent_change(
+    values: list[float | None],
+) -> float | None:
+    if len(values) < 2:
+        return None
+
+    first = values[0]
+    last = values[-1]
+
+    if first is None or last is None:
+        return None
+
+    if first == 0:
+        return None
+
+    return round(
+        (last - first) / first * 100,
+        1,
+    )
 
 
 def analyze_run(
@@ -106,7 +174,7 @@ def analyze_run(
             warnings=["This activity was not linked " "to a planned workout."],
         )
 
-    planned_interval_result = find_planned_pace_interval(run.planned_workout.steps)
+    planned_interval_result = find_planned_interval(run.planned_workout.steps)
 
     if planned_interval_result is None:
         return RunAnalysis(
@@ -116,7 +184,7 @@ def analyze_run(
             completed_repetitions=0,
             completion_percent=0.0,
             zone_4_5_percent=zone_4_5_percent,
-            warnings=["No planned pace interval " "was found in this workout."],
+            warnings=["No planned interval " "was found in this workout."],
         )
 
     planned_step, planned_repetitions = planned_interval_result
@@ -139,8 +207,7 @@ def analyze_run(
 
     target_slow_pace = planned_step.target_pace_slow_seconds_per_km
 
-    assert target_fast_pace is not None
-    assert target_slow_pace is not None
+    has_pace_target = target_fast_pace is not None and target_slow_pace is not None
 
     intervals: list[IntervalExecution] = []
 
@@ -154,23 +221,36 @@ def analyze_run(
             warnings.append(f"Repetition {repetition} " "did not contain pace data.")
             continue
 
-        seconds_from_target = calculate_target_deviation(
-            actual_pace=actual_pace,
-            target_fast_pace=target_fast_pace,
-            target_slow_pace=target_slow_pace,
-        )
+        seconds_from_target = None
+        within_target = None
+
+        if has_pace_target:
+            seconds_from_target = calculate_target_deviation(
+                actual_pace=actual_pace,
+                target_fast_pace=target_fast_pace,
+                target_slow_pace=target_slow_pace,
+            )
+
+            within_target = target_fast_pace <= actual_pace <= target_slow_pace
 
         intervals.append(
             IntervalExecution(
                 repetition=repetition,
-                actual_pace_seconds_per_km=(round(actual_pace, 1)),
+                actual_pace_seconds_per_km=round(
+                    actual_pace,
+                    1,
+                ),
                 target_fast_seconds_per_km=(target_fast_pace),
                 target_slow_seconds_per_km=(target_slow_pace),
                 seconds_from_target_range=(seconds_from_target),
-                within_target=(target_fast_pace <= actual_pace <= target_slow_pace),
+                within_target=within_target,
                 average_heart_rate=(lap.average_heart_rate),
                 maximum_heart_rate=(lap.maximum_heart_rate),
                 average_cadence_spm=(lap.average_cadence_spm),
+                average_ground_contact_time_ms=(lap.average_ground_contact_time_ms),
+                average_stride_length_m=(lap.average_stride_length_m),
+                average_vertical_oscillation_cm=(lap.average_vertical_oscillation_cm),
+                average_vertical_ratio_percent=(lap.average_vertical_ratio_percent),
                 workout_compliance_percent=(lap.workout_compliance_percent),
             )
         )
@@ -198,6 +278,30 @@ def analyze_run(
             1,
         )
 
+    # Running mechanics for the matched work intervals
+
+    ground_contact_times = [lap.average_ground_contact_time_ms for lap in matching_laps]
+
+    stride_lengths = [lap.average_stride_length_m for lap in matching_laps]
+
+    vertical_oscillations = [
+        lap.average_vertical_oscillation_cm for lap in matching_laps
+    ]
+
+    vertical_ratios = [lap.average_vertical_ratio_percent for lap in matching_laps]
+
+    first_to_last_ground_contact_change = calculate_first_to_last_percent_change(
+        ground_contact_times
+    )
+
+    first_to_last_stride_length_change = calculate_first_to_last_percent_change(
+        stride_lengths
+    )
+
+    first_to_last_vertical_ratio_change = calculate_first_to_last_percent_change(
+        vertical_ratios
+    )
+
     if planned_repetitions > 0:
         completion_percent = round(
             completed_repetitions / planned_repetitions * 100,
@@ -220,6 +324,28 @@ def analyze_run(
         ),
         average_interval_cadence_spm=(
             average_optional_values([lap.average_cadence_spm for lap in matching_laps])
+        ),
+        average_interval_ground_contact_time_ms=(
+            average_optional_values(ground_contact_times)
+        ),
+        average_interval_stride_length_m=(
+            average_optional_values(
+                stride_lengths,
+                digits=3,
+            )
+        ),
+        average_interval_vertical_oscillation_cm=(
+            average_optional_values(vertical_oscillations)
+        ),
+        average_interval_vertical_ratio_percent=(
+            average_optional_values(vertical_ratios)
+        ),
+        first_to_last_ground_contact_time_change_percent=(
+            first_to_last_ground_contact_change
+        ),
+        first_to_last_stride_length_change_percent=(first_to_last_stride_length_change),
+        first_to_last_vertical_ratio_change_percent=(
+            first_to_last_vertical_ratio_change
         ),
         zone_4_5_percent=zone_4_5_percent,
         intervals=intervals,

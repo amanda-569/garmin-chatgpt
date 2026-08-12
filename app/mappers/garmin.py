@@ -85,6 +85,12 @@ def map_garmin_lap(
         average_heart_rate=raw_lap.get("averageHR"),
         maximum_heart_rate=raw_lap.get("maxHR"),
         average_cadence_spm=raw_lap.get("averageRunCadence"),
+        average_ground_contact_time_ms=raw_lap.get("groundContactTime"),
+        average_stride_length_m=(
+            convert_stride_length_to_meters(raw_lap.get("strideLength"))
+        ),
+        average_vertical_oscillation_cm=raw_lap.get("verticalOscillation"),
+        average_vertical_ratio_percent=raw_lap.get("verticalRatio"),
         elevation_gain_meters=raw_lap.get("elevationGain"),
         workout_compliance_percent=raw_lap.get("directWorkoutComplianceScore"),
     )
@@ -138,7 +144,13 @@ def map_garmin_activity_to_run_details(
         moving_duration_seconds=summary.get("movingDuration"),
         average_speed_mps=summary.get("averageSpeed"),
         maximum_speed_mps=summary.get("maxSpeed"),
-        average_cadence_spm=summary.get("averageRunningCadenceInStepsPerMinute"),
+        average_cadence_spm=summary.get("averageRunCadence"),
+        average_ground_contact_time_ms=summary.get("groundContactTime"),
+        average_stride_length_m=(
+            convert_stride_length_to_meters(summary.get("strideLength"))
+        ),
+        average_vertical_oscillation_cm=summary.get("verticalOscillation"),
+        average_vertical_ratio_percent=summary.get("verticalRatio"),
         elevation_gain_meters=summary.get("elevationGain"),
         aerobic_training_effect=summary.get("aerobicTrainingEffect"),
         anaerobic_training_effect=summary.get("anaerobicTrainingEffect"),
@@ -401,4 +413,16 @@ def map_garmin_planned_workout(
         estimated_duration_seconds=(raw_workout.get("estimatedDurationInSecs")),
         estimated_distance_meters=(raw_workout.get("estimatedDistanceInMeters")),
         steps=mapped_steps,
+    )
+
+
+def convert_stride_length_to_meters(
+    value: int | float | None,
+) -> float | None:
+    if value is None:
+        return None
+
+    return round(
+        float(value) / 100,
+        3,
     )

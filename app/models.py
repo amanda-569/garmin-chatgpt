@@ -40,6 +40,11 @@ class RunLap(BaseModel):
     elevation_gain_meters: float | None = None
     workout_compliance_percent: float | None = None
 
+    average_ground_contact_time_ms: float | None = None
+    average_stride_length_m: float | None = None
+    average_vertical_oscillation_cm: float | None = None
+    average_vertical_ratio_percent: float | None = None
+
 
 class HeartRateZone(BaseModel):
     zone_number: int
@@ -99,20 +104,29 @@ class RunDetails(RunSummary):
 
     weather: RunWeather | None = None
 
+    average_ground_contact_time_ms: float | None = None
+    average_stride_length_m: float | None = None
+    average_vertical_oscillation_cm: float | None = None
+    average_vertical_ratio_percent: float | None = None
+
 
 class IntervalExecution(BaseModel):
     repetition: int
 
     actual_pace_seconds_per_km: float
-    target_fast_seconds_per_km: float
-    target_slow_seconds_per_km: float
+    target_fast_seconds_per_km: float | None = None
+    target_slow_seconds_per_km: float | None = None
 
-    seconds_from_target_range: float
-    within_target: bool
+    seconds_from_target_range: float | None = None
+    within_target: bool | None = None
 
     average_heart_rate: float | None = None
     maximum_heart_rate: float | None = None
     average_cadence_spm: float | None = None
+    average_ground_contact_time_ms: float | None = None
+    average_stride_length_m: float | None = None
+    average_vertical_oscillation_cm: float | None = None
+    average_vertical_ratio_percent: float | None = None
 
     workout_compliance_percent: float | None = None
 
@@ -131,6 +145,14 @@ class RunAnalysis(BaseModel):
 
     average_interval_heart_rate: float | None = None
     average_interval_cadence_spm: float | None = None
+    average_interval_ground_contact_time_ms: float | None = None
+    average_interval_stride_length_m: float | None = None
+    average_interval_vertical_oscillation_cm: float | None = None
+    average_interval_vertical_ratio_percent: float | None = None
+
+    first_to_last_ground_contact_time_change_percent: float | None = None
+    first_to_last_stride_length_change_percent: float | None = None
+    first_to_last_vertical_ratio_change_percent: float | None = None
 
     zone_4_5_percent: float
 
